@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home | Carver College</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Montserrat:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="assets/img/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/img/favicon-16x16.png">
+    <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+    <header>
+        <div class="hamburger" id="hamburger-btn">
+            <span class="line line-1"></span>
+            <span class="line line-2"></span>
+            <span class="line line-3"></span>
+        </div>
+
+        <div class="search-container">
+            <input type="text" class="search-input" id="search-input" placeholder="Search...">
+            <button class="search-btn" id="search-btn">
+                <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="menu-overlay" id="mobile-menu">
+        <div class="menu-bg-layer"></div>
+        <div class="menu-content">
+            <ul class="menu-links">
+                <li data-aos="fade-up" data-aos-delay="100"><a href="#">Home</a></li>
+                <li class="has-dropdown" data-aos="fade-up" data-aos-delay="200">
+                    <a href="#" class="dropdown-toggle">Academics <i class="fa-solid fa-chevron-down"></i>
+                    </a>
+                    <ul class="sub-menu">
+                        <li><a href="#">Undergraduate</a></li>
+                        <li><a href="#">Graduate</a></li>
+                    </ul>
+                </li>
+                <li data-aos="fade-up" data-aos-delay="250"><a href="#">Admissions</a></li>
+                <li data-aos="fade-up" data-aos-delay="300"><a href="#">Athletics</a></li>
+                <li class="has-dropdown" data-aos="fade-up" data-aos-delay="350">
+                    <a href="#" class="dropdown-toggle">Research & Innovation <i class="fa-solid fa-chevron-down"></i></a>
+                    <ul class="sub-menu">
+                        <li><a href="#">Research at Carver</a></li>
+                    </ul>
+                </li>
+                <li class="has-dropdown" data-aos="fade-up" data-aos-delay="400">
+                    <a href="#" class="dropdown-toggle">Life at Carver <i class="fa-solid fa-chevron-down"></i></a>
+                    <ul class="sub-menu">
+                        <li><a href="#">Arts & Culture</a></li>
+                        <li><a href="#">Societies and Organisations</a></li>
+                        <li><a href="#">Housing and Dining</a></li>
+                        <li><a href="#">Health and Wellness</a></li>
+                        <li><a href="#">Safety and Security</a></li>
+                    </ul>
+                </li>
+                <li data-aos="fade-up" data-aos-delay="450"><a href="#">About</a></li>
+            </ul>
+            <div class="menu-footer" data-aos="fade-up" data-aos-delay="600">
+                <a href="#" class="menu-action-btn">Student Portal</a>
+            </div>
+        </div>
+    </div>
+
+    <section class="hero">
+        <div class="video-container">
+            <div class="video-overlay"></div>
+            <video autoplay muted loop playsinline class="hero-video">
+                <source src="assets/img/14894863_1920_1080_50fps.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+        
+        <div class="hero-content" data-aos="fade-up">
+            <h1>Welcome to <br><span>Carver College</span></h1>
+            <p>At Carver College, we don’t just teach technology—we master it. As a pioneer polytechnic, we are dedicated to bridging the gap between theoretical science and industrial application.</p>
+        </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="purpose-section">
+        <div class="purpose-bg">
+            <img src="assets/img/home-impact-desktop.jpg" alt="Campus Aerial View">
+        </div>
+        
+        <div class="purpose-buttons-container">
+            <a href="#" class="purpose-btn" data-aos="fade-up" data-aos-delay="100">
+            Start Your Journey
+            </a>
+            <a href="#" class="purpose-btn" data-aos="fade-up" data-aos-delay="200">
+            Explore Campus
+            </a>
+        </div>
+        
+        <div class="purpose-overlay-shape">
+            <div class="purpose-content" data-aos="fade-left">
+                <h2>Innovate.<br>Build.<br>Lead.</h2>
+                <div class="scroll-indicator">
+                    <i class="fa-solid fa-angles-down"></i>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- ... Previous Section Ends ... -->
+
+    <!-- NEW SECTION: Mission, Video & Testimonials -->
+    <section class="mission-video-section">
+        
+        <!-- Top Text Block -->
+        <div class="mission-text-container" data-aos="fade-up">
+            <p>
+                “When you do the common things in life in an uncommon way, you will command the attention of the world.”
+            </p>
+        </div>
+
+        <!-- Video Container -->
+        <div class="video-wrapper" data-aos="zoom-in" data-aos-duration="1200">
+            <!-- Replace 'VIDEO_ID' with your actual YouTube video ID -->
+            <iframe 
+                src="assets/img/5cd93d81-e1e1-4416-8ccc-4b123c23fe80.mp4" 
+                title="Carver College Video" 
+                frameborder="0" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                allowfullscreen>
+            </iframe>
+        </div>
+
+        <!-- Testimonial Slider -->
+        <div class="testimonial-container">
+            <div class="testimonial-bg-icon">
+                <!--<img src="assets/img/logo.png" alt="">-->
+                <i class="fa-solid fa-scale-balanced"></i>
+            </div>
+            
+            <div class="slider-content">
+                <div class="slider-dots">
+                    <span class="dot active" onclick="currentSlide(1)"></span>
+                    <span class="dot" onclick="currentSlide(2)"></span>
+                    <span class="dot" onclick="currentSlide(3)"></span>
+                </div>
+                
+                <div class="testimonial-slide active">
+                    <p class="quote">“Start where you are, with what you have. Make something of it and never be satisfied”</p>
+                    <p class="author">George Washington Carver</p>
+                </div>
+
+                <div class="testimonial-slide">
+                    <p class="quote">“Education is the passport to the future, for tomorrow belongs to those who prepare for it today.”</p>
+                    <p class="author">Malcolm X</p>
+                </div>
+
+                <div class="testimonial-slide">
+                    <p class="quote">“Education is the key to unlock the golden door of freedom.”</p>
+                    <p class="author">George Washington Carver</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- ... Previous Section Ends ... -->
+
+    <!-- NEW SECTION: University Life Carousel -->
+    <section class="life-section">
+        <div class="section-header" data-aos="fade-up">
+            <h2>University Life</h2>
+            <p>Keep track of all the key dates this fall!</p>
+        </div>
+
+        <!-- Horizontal Scrolling Container -->
+        <div class="card-scroller">
+            
+            <!-- Card 1: The Carver Philosophy -->
+            <div class="life-card" data-aos="fade-up" data-aos-delay="100">
+                <div class="card-image">
+                    <!-- Replace with actual image -->
+                    <img src="assets/img/philosophy.jpg" alt="Carver Philosophy">
+                </div>
+                <div class="card-content">
+                    <h3>The Carver Philosophy</h3>
+                    <p>Carver College is not just a school; it is a workshop for the real world. We are a pioneer polytechnic dedicated to applied STEM, ensuring that our graduates don't just understand how the world works—they have the skills to build, fix, heal, and improve it.</p>
+                    <a href="#" class="card-btn">READ MORE</a>
+                </div>
+            </div>
+
+            <!-- Card 2: Upcoming Events -->
+            <div class="life-card" data-aos="fade-up" data-aos-delay="200">
+                <div class="card-image">
+                    <img src="assets/img/events.jpg" alt="Upcoming Events">
+                </div>
+                <div class="card-content">
+                    <h3>Upcoming Events</h3>
+                    <p>Don't miss out on orientation week, the homecoming parade, and our annual science fair.</p>
+                    <a href="#" class="card-btn">VIEW CALENDAR</a>
+                </div>
+            </div>
+
+            <!-- Card 3: Academic Events -->
+            <div class="life-card" data-aos="fade-up" data-aos-delay="300">
+                <div class="card-image">
+                    <img src="assets/img/academic.jpg" alt="Academic Events">
+                </div>
+                <div class="card-content">
+                    <h3>Academic Events</h3>
+                    <p>Join guest lectures from industry leaders, research symposiums, and thesis defense presentations.</p>
+                    <a href="#" class="card-btn">SEE SCHEDULE</a>
+                </div>
+            </div>
+
+            <!-- Card 4: Campus Store -->
+            <div class="life-card" data-aos="fade-up" data-aos-delay="400">
+                <div class="card-image">
+                    <img src="assets/img/store.jpg" alt="Campus Store">
+                </div>
+                <div class="card-content">
+                    <h3>Visit the Campus Store</h3>
+                    <p>Get your official Carver gear, textbooks, and supplies. Show your school spirit!</p>
+                    <a href="#" class="card-btn">SHOP NOW</a>
+                </div>
+            </div>
+
+            <!-- Card 5: Carver Athletics -->
+            <div class="life-card" data-aos="fade-up" data-aos-delay="500">
+                <div class="card-image">
+                    <img src="assets/img/athletics.jpg" alt="Carver Athletics">
+                </div>
+                <div class="card-content">
+                    <h3>Carver Athletics</h3>
+                    <p>Support our teams! From the football field to the track, excellence runs in our veins.</p>
+                    <a href="#" class="card-btn">GO TIGERS</a>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ... Scripts ... -->
+
+    <!-- ... Scripts ... -->
+
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script src="assets/js/scripts.js" defer></script>
+</body>
+</html>
