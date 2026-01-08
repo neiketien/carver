@@ -1,0 +1,284 @@
+<?php
+require_once 'includes/config.php';
+requireAuth();
+
+$pdo = getDBConnection();
+$user = getCurrentUser(); 
+
+$pendingCount = 0;
+if (hasRole('editor') || hasRole('admin')) {
+    $pendingCount = $pdo->query("SELECT COUNT(*) FROM articles WHERE status = 'pending'")->fetchColumn();
+}
+
+$articleId = $_GET['id'] ?? null;
+
+if (!$articleId) {
+    header('Location: manage-articles.php');
+    exit;
+}
+
+// Fetch Article Data
+$stmt = $pdo->prepare("SELECT a.*, u.full_name as author_name FROM articles a JOIN users u ON a.user_id = u.id WHERE a.id = ?");
+$stmt->execute([$articleId]);
+$article = $stmt->fetch();
+
+if (!$article) {
+    die("Article not found.");
+}
+
+// Handle Publishing from Preview
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $newStatus = $_POST['action'] === 'publish' ? 'published' : 'draft';
+    
+    // Only Editors/Admins can publish
+    if ($newStatus === 'published' && !hasRole('editor')) {
+        die("Unauthorized to publish.");
+    }
+
+    $updateSql = "UPDATE articles SET status = ?";
+    if ($newStatus === 'published') {
+        $updateSql .= ", published_at = IF(published_at IS NULL, NOW(), published_at)";
+    }
+    $updateSql .= " WHERE id = ?";
+    
+    $pdo->prepare($updateSql)->execute([$newStatus, $articleId]);
+    
+    header("Location: manage-articles.php");
+    exit;
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview: <?php echo e($article['title']); ?></title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Use content styles from public site if available, else standard admin CSS -->
+  <!--<style>
+      /* Minimal styles to mimic the article page inside admin */
+      .article-preview-content { max-width: 800px; margin: 0 auto; background: #fff; padding: 40px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+      .article-preview-title { font-size: 2.5rem; font-weight: 800; line-height: 1.2; margin-bottom: 1rem; color: #1a2a3a; }
+      .article-preview-byline { color: #666; font-size: 0.9rem; margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
+      .article-preview-body { font-size: 1.1rem; line-height: 1.8; color: #333; }
+      .article-preview-body img { max-width: 100%; height: auto; border-radius: 4px; margin: 20px 0; }
+      .preview-image { width: 100%; max-height: 400px; object-fit: cover; border-radius: 8px; margin-bottom: 20px; }
+  </style>-->
+  <style>
+      /* Article Preview Container */
+      .article-preview-content { 
+          width: 100%;
+          max-width: 800px; 
+          margin: 0 auto; 
+          background: #fff; 
+          padding: 40px; 
+          box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+          box-sizing: border-box; /* Prevents padding from adding to width */
+          overflow: hidden; /* Cuts off anything sticking out */
+      }
+
+      .article-preview-title { 
+          font-size: 2.5rem; 
+          font-weight: 800; 
+          line-height: 1.2; 
+          margin-bottom: 1rem; 
+          color: #1a2a3a;
+          word-wrap: break-word; /* Wraps long titles */
+      }
+
+      .article-preview-byline { 
+          color: #666; 
+          font-size: 0.9rem; 
+          margin-bottom: 2rem; 
+          border-bottom: 1px solid #eee; 
+          padding-bottom: 1rem; 
+      }
+
+      /* Body Content Fixes */
+      .article-preview-body { 
+          font-size: 1.1rem; 
+          line-height: 1.8; 
+          color: #333; 
+          width: 100%;
+          overflow-wrap: break-word; /* Forces long words/urls to break */
+          word-wrap: break-word;
+      }
+
+      /* Force all media to be responsive */
+      .article-preview-body img,
+      .article-preview-body video,
+      .article-preview-body iframe { 
+          max-width: 100% !important; 
+          height: auto !important; 
+          display: block;
+          margin: 20px auto;
+          border-radius: 4px;
+      }
+      
+      .preview-image { 
+          width: 100%; 
+          height: auto; 
+          max-height: 400px; 
+          object-fit: cover; 
+          border-radius: 8px; 
+          margin-bottom: 20px; 
+      }
+      
+      .article-preview-body a {
+    color: #0056b3;
+    text-decoration: underline;
+}
+
+      /* Mobile Adjustment */
+      @media (max-width: 768px) {
+          .article-preview-content { padding: 20px; }
+          .article-preview-title { font-size: 1.8rem; }
+      }
+  </style>
+</head>
+<body>   
+    <div class="dashboard">
+    <!-- HEADER START -->
+    <header class="dashboard-header">
+        <div class="header-container">
+            <div class="logo">The Bee</div>
+            
+            <nav class="header-nav">
+                <ul class="nav-links">
+                    <li><a href="admin-dashboard.php" class="nav-link active">Dashboard</a></li>
+                    <li><a href="manage-articles.php" class="nav-link">Articles</a></li>
+                    <?php if (hasRole('admin')): ?>
+                    <li><a href="analytics.php" class="nav-link">Analytics</a></li>
+                    <li><a href="admin-signup.php" class="nav-link">Users</a></li>
+                    <?php endif; ?>
+                </ul>
+            </nav>
+
+            <div class="header-actions">
+                <div class="search-container">
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" class="search-input" placeholder="Search...">
+                </div>
+
+                <?php if ($pendingCount > 0 && hasRole('editor')): ?>
+                <button class="icon-button" style="position: relative;">
+                    <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                    <span style="position: absolute; top: -4px; right: -4px; background: #e74c3c; color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">
+                        <?php echo $pendingCount; ?>
+                    </span>
+                </button>
+                <?php endif; ?>
+
+                <div class="user-menu">
+                    <div class="user-avatar"><?php echo getInitials($user['full_name']); ?></div>
+                    <div class="user-dropdown">
+                        <div class="user-details">
+                            <div class="small-user-avatar"><?php echo getInitials($user['full_name']); ?></div>
+                            <div class="user-component">
+                                <b><?php echo e($user['full_name']); ?></b>
+                                <p><?php echo e($user['email']); ?></p>
+                            </div>
+                        </div>
+                        <?php if (hasRole('admin')): ?>
+                        <div class="dropdown-separator"></div>
+                        <a href="analytics.php" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 16v5"/><path d="M16 14v7"/><path d="M20 10v11"/><path d="m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15"/><path d="M4 18v3"/><path d="M8 14v7"/>
+                            </svg>
+                            Analytics
+                        </a>
+                        <a href="manage-articles.php" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/>
+                            </svg>
+                            Articles
+                        </a>
+                        <?php endif; ?>
+                        <div class="dropdown-separator"></div>
+                        <a href="profile.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            Profile
+                        </a>
+                        <a href="settings.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                            Settings
+                        </a>
+                        <div class="dropdown-separator"></div>
+                        <a href="logout.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" x2="9" y1="12" y2="12"></line>
+                            </svg>
+                            Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+      <div class="page-header">
+        <h1 class="header-greeting">Review Article</h1>
+        <p class="page-description">Status: <span class="badge <?php echo $article['status']; ?>"><?php echo ucfirst($article['status']); ?></span></p>
+      </div>
+
+      <div class="preview-actions-bar">
+          <a href="create-article.php?id=<?php echo $article['id']; ?>" class="button button-outline">
+              Edit Again
+          </a>
+          
+          <form method="POST" style="display:inline;">
+              <input type="hidden" name="action" value="draft">
+              <button type="submit" class="button button-secondary">Revert to Draft</button>
+          </form>
+
+          <?php if(hasRole('editor') || hasRole('admin')): ?>
+          <form method="POST" style="display:inline;">
+              <input type="hidden" name="action" value="publish">
+              <button type="submit" class="button button-primary">Publish Now</button>
+          </form>
+          <?php endif; ?>
+      </div>
+
+      <div class="article-preview-wrapper">
+          <article class="article-preview-content">
+              <?php if($article['featured_image']): ?>
+                <img src="<?php echo UPLOAD_URL . $article['featured_image']; ?>" class="preview-image" alt="Featured">
+              <?php endif; ?>
+              
+              <h1 class="article-preview-title"><?php echo e($article['title']); ?></h1>
+              
+              <div class="article-preview-byline">
+                  by <?php echo e($article['author_name']); ?>
+              </div>
+
+              <div class="article-preview-body">
+                  <?php echo $article['content']; // Output raw HTML from TinyMCE ?>
+              </div>
+          </article>
+      </div>
+
+    </main>
+
+    <footer class="footer">
+      &copy; <?php echo date("Y"); ?> Southern Bee. All rights reserved.
+    </footer>
+  </div>
+    
+    <script src="assets/js/main.js" defer></script>
+</body>
+</html>
