@@ -1,0 +1,74 @@
+<?php
+// --- FILE: api/load-more.php ---
+require_once '../includes/config.php';
+
+header('Content-Type: application/json');
+
+$input = json_decode(file_get_contents('php://input'), true);
+$page = $input['page'] ?? 1;
+$perPage = $input['perPage'] ?? 12;
+$type = $input['type'] ?? 'latest';
+$categorySlug = $input['categorySlug'] ?? '';
+$tagSlug = $input['tagSlug'] ?? ''; // New Parameter
+$searchQuery = $input['searchQuery'] ?? '';
+
+$offset = ($page - 1) * $perPage;
+$pdo = getDBConnection();
+
+try {
+    // Base Query
+    $sql = "SELECT a.id, a.title, a.subheading, a.slug, a.featured_image, a.published_at,
+                   c.name as category_name, c.slug as category_slug,
+                   (SELECT t.slug FROM article_tags at JOIN tags t ON at.tag_id = t.id WHERE at.article_id = a.id LIMIT 1) as first_tag
+            FROM articles a
+            JOIN categories c ON a.category_id = c.id";
+    
+    // If filtering by tag, we need to join the tag tables
+    if ($type === 'tag' && !empty($tagSlug)) {
+        $sql .= " JOIN article_tags at_filter ON a.id = at_filter.article_id
+                  JOIN tags t_filter ON at_filter.tag_id = t_filter.id";
+    }
+
+    $sql .= " WHERE a.status = 'published'";
+    
+    $params = [];
+
+    // --- LOGIC SWITCH ---
+    if ($type === 'category' && !empty($categorySlug)) {
+        $sql .= " AND c.slug = :catSlug";
+        $params[':catSlug'] = $categorySlug;
+    } 
+    elseif ($type === 'search' && !empty($searchQuery)) {
+        $sql .= " AND a.title LIKE :searchQuery";
+        $params[':searchQuery'] = '%' . $searchQuery . '%';
+    }
+    elseif ($type === 'tag' && !empty($tagSlug)) {
+        $sql .= " AND t_filter.slug = :tagSlug";
+        $params[':tagSlug'] = $tagSlug;
+    }
+    // --------------------
+
+    $sql .= " ORDER BY a.published_at DESC LIMIT :limit OFFSET :offset";
+    
+    $stmt = $pdo->prepare($sql);
+    
+    // Bind dynamic parameters
+    foreach ($params as $key => $val) {
+        $stmt->bindValue($key, $val);
+    }
+    $stmt->bindValue(':limit', (int)$perPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+    
+    $stmt->execute();
+    $articles = $stmt->fetchAll();
+
+    // Format dates for JS
+    foreach ($articles as &$article) {
+        $article['published_at_formatted'] = formatDate($article['published_at']);
+    }
+
+    echo json_encode(['success' => true, 'articles' => $articles]);
+
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+}

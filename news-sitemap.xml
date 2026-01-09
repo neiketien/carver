@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+  <url>
+    <loc>https://www.southern-bee.com/politics/latin-america/argentine-unions-call-for-strike-during-march-opposing-labour-reform</loc>
+    <news:news>
+      <news:publication>
+        <news:name>Southern Bee</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-01-07T10:25:08+00:00</news:publication_date>
+      <news:title>Argentine Unions Call for Strike During March Opposing Labour Reform</news:title>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://www.southern-bee.com/economy/latin-america/eu-and-mercosur-aim-for-january-signing-of-landmark-trade-deal</loc>
+    <news:news>
+      <news:publication>
+        <news:name>Southern Bee</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-01-07T09:15:00+00:00</news:publication_date>
+      <news:title>EU and Mercosur Aim for January Signing of Landmark Trade Deal</news:title>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://www.southern-bee.com/politics/africa/nigeria-launches-military-incursion-in-benin-following-failed-coup</loc>
+    <news:news>
+      <news:publication>
+        <news:name>Southern Bee</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-01-06T18:45:12+00:00</news:publication_date>
+      <news:title>Nigeria Launches Military Incursion in Benin Following Failed Coup</news:title>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://www.southern-bee.com/tech/asia/shenzhen-metro-debuts-world-s-first-ai-robotic-guide-dog-for-visually-impaired-passengers</loc>
+    <news:news>
+      <news:publication>
+        <news:name>Southern Bee</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-01-06T14:20:00+00:00</news:publication_date>
+      <news:title>Shenzhen Metro Debuts World's First AI Robotic Guide Dog for Visually Impaired Passengers</news:title>
+    </news:news>
+  </url>
+
+</urlset>

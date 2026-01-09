@@ -1,0 +1,426 @@
+<?php
+require_once 'includes/config.php';
+requireAuth();
+
+$pdo = getDBConnection();
+$user = getCurrentUser();
+$message = '';
+$error = '';
+
+$pendingCount = 0;
+// Only query if the user has a role that cares about pending articles (Editor/Admin)
+if (hasRole('editor') || hasRole('admin')) {
+    $pendingCount = $pdo->query("SELECT COUNT(*) FROM articles WHERE status = 'pending'")->fetchColumn();
+}
+
+// Check if editing an existing article
+$articleId = $_GET['id'] ?? null;
+$article = null;
+$articleTags = '';
+
+if ($articleId) {
+    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = ?");
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch();
+
+    // Permissions check: Writers can only edit their own
+    if ($user['role'] === 'writer' && $article['user_id'] !== $user['id']) {
+        header('Location: manage-articles.php');
+        exit;
+    }
+
+    // Fetch existing tags
+    $tagStmt = $pdo->prepare("SELECT t.name FROM tags t JOIN article_tags at ON t.id = at.tag_id WHERE at.article_id = ?");
+    $tagStmt->execute([$articleId]);
+    $articleTags = implode(', ', $tagStmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+$tagsInput = $_POST['article-tags'] ?? '';
+$keywordsInput = $_POST['article-keywords'] ?? '';
+
+// Handle Form Submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $title = trim($_POST['article-title']);
+    $subheading = trim($_POST['article-subheading']);
+    $categoryId = $_POST['article-category']; // In DB this is int, form sends string value (slug). Need to resolve.
+    $content = $_POST['article-content'];
+    $tagsInput = $_POST['article-tags'];
+    $caption = $_POST['article-photo-caption'];
+    $isTopStory = isset($_POST['top-story']) ? 1 : 0;
+    $status = $_POST['status'] ?? 'draft'; // Set via JS or default
+
+    // Resolve Category Slug to ID
+    $catStmt = $pdo->prepare("SELECT id FROM categories WHERE slug = ?");
+    $catStmt->execute([$categoryId]);
+    $catRow = $catStmt->fetch();
+    $realCategoryId = $catRow ? $catRow['id'] : null;
+
+    if (!$title || !$realCategoryId) {
+        $error = "Title and Category are required.";
+    } else {
+        try {
+            $pdo->beginTransaction();
+
+            // Handle Image Upload
+            $imagePath = $article['featured_image'] ?? null;
+            if (isset($_FILES['article-photo']) && $_FILES['article-photo']['error'] === UPLOAD_ERR_OK) {
+                $uploadResult = uploadFile($_FILES['article-photo'], 'articles');
+                if (isset($uploadResult['success'])) {
+                    $imagePath = $uploadResult['filename'];
+                } else {
+                    throw new Exception($uploadResult['error']);
+                }
+            }
+
+            $slug = generateSlug($title);
+            // Append random string if slug exists and not editing same article
+            // (Simplified slug logic for brevity)
+
+            if ($articleId) {
+                // UPDATE
+                $sql = "UPDATE articles SET title=?, subheading=?, category_id=?, content=?, featured_image=?, image_caption=?, is_featured_top_story=?, status=?, meta_keywords=?, updated_at=NOW() WHERE id=?";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([$title, $subheading, $realCategoryId, $content, $imagePath, $caption, $isTopStory, $status, $keywordsInput, $articleId]);
+            } else {
+                // INSERT
+                $sql = "INSERT INTO articles (user_id, category_id, title, slug, subheading, content, featured_image, image_caption, status, is_featured_top_story, meta_keywords) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([$user['id'], $realCategoryId, $title, $slug, $subheading, $content, $imagePath, $caption, $status, $isTopStory, $keywordsInput]);
+                $articleId = $pdo->lastInsertId();
+            }
+
+            // Handle Tags
+            // 1. Clear existing tags for this article
+            $pdo->prepare("DELETE FROM article_tags WHERE article_id = ?")->execute([$articleId]);
+            
+            // 2. Process new tags
+            $tagsArray = array_map('trim', explode(',', $tagsInput));
+            foreach ($tagsArray as $tagName) {
+                if (empty($tagName)) continue;
+                $tagSlug = generateSlug($tagName);
+                
+                // Check if tag exists
+                $tCheck = $pdo->prepare("SELECT id FROM tags WHERE slug = ?");
+                $tCheck->execute([$tagSlug]);
+                $tagId = $tCheck->fetchColumn();
+
+                if (!$tagId) {
+                    $pdo->prepare("INSERT INTO tags (name, slug) VALUES (?, ?)")->execute([$tagName, $tagSlug]);
+                    $tagId = $pdo->lastInsertId();
+                }
+                
+                $pdo->prepare("INSERT INTO article_tags (article_id, tag_id) VALUES (?, ?)")->execute([$articleId, $tagId]);
+            }
+
+            $pdo->commit();
+            
+            if ($status === 'published') {
+                // Update published_at if not set
+                $pdo->prepare("UPDATE articles SET published_at = NOW() WHERE id = ? AND published_at IS NULL")->execute([$articleId]);
+            }
+
+            header("Location: preview.php?id=$articleId");
+            exit;
+
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error = "Error saving article: " . $e->getMessage();
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Southern Bee | <?php echo $articleId ? 'Edit' : 'Create'; ?> Article</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="https://cdn.tiny.cloud/1/0yle6iz0y7zepccdjmupv0oqgtvdfxa7a0gwty8p3qj2dv4b/tinymce/8/tinymce.min.js" referrerpolicy="origin" crossorigin="anonymous"></script>
+  <style>
+      .form-input.limit-error {
+          border-color: #dc2626 !important; /* Red border */
+          background-color: #fef2f2 !important;
+      }
+      
+      .limit-message {
+          font-size: 12px;
+          color: #dc2626;
+          display: none;
+          margin-top: 4px;
+      }
+      
+      .limit-message.visible {
+          display: block;
+      }
+      
+      .alert-box { transition: opacity 0.5s ease; }
+  </style>
+</head>
+<body>   
+    <div class="dashboard">
+    <!-- HEADER START -->
+    <header class="dashboard-header">
+        <div class="header-container">
+            <div class="logo">The Bee</div>
+            
+            <nav class="header-nav">
+                <ul class="nav-links">
+                    <li><a href="admin-dashboard.php" class="nav-link active">Dashboard</a></li>
+                    <li><a href="manage-articles.php" class="nav-link">Articles</a></li>
+                    <?php if (hasRole('admin')): ?>
+                    <li><a href="analytics.php" class="nav-link">Analytics</a></li>
+                    <li><a href="admin-signup.php" class="nav-link">Users</a></li>
+                    <?php endif; ?>
+                </ul>
+            </nav>
+
+            <div class="header-actions">
+                <div class="search-container">
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" class="search-input" placeholder="Search...">
+                </div>
+
+                <?php if ($pendingCount > 0 && hasRole('editor')): ?>
+                <button class="icon-button" style="position: relative;">
+                    <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                    <span style="position: absolute; top: -4px; right: -4px; background: #e74c3c; color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">
+                        <?php echo $pendingCount; ?>
+                    </span>
+                </button>
+                <?php endif; ?>
+
+                <div class="user-menu">
+                    <div class="user-avatar"><?php echo getInitials($user['full_name']); ?></div>
+                    <div class="user-dropdown">
+                        <div class="user-details">
+                            <div class="small-user-avatar"><?php echo getInitials($user['full_name']); ?></div>
+                            <div class="user-component">
+                                <b><?php echo e($user['full_name']); ?></b>
+                                <p><?php echo e($user['email']); ?></p>
+                            </div>
+                        </div>
+                        <?php if (hasRole('admin')): ?>
+                        <div class="dropdown-separator"></div>
+                        <a href="analytics.php" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 16v5"/><path d="M16 14v7"/><path d="M20 10v11"/><path d="m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15"/><path d="M4 18v3"/><path d="M8 14v7"/>
+                            </svg>
+                            Analytics
+                        </a>
+                        <a href="manage-articles.php" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/>
+                            </svg>
+                            Articles
+                        </a>
+                        <?php endif; ?>
+                        <div class="dropdown-separator"></div>
+                        <a href="profile.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            Profile
+                        </a>
+                        <a href="settings.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                            Settings
+                        </a>
+                        <div class="dropdown-separator"></div>
+                        <a href="logout.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" x2="9" y1="12" y2="12"></line>
+                            </svg>
+                            Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+      <div class="page-header">
+        <h1 class="header-greeting"><?php echo $articleId ? 'Edit Article' : 'Create New Article'; ?></h1>
+        <p class="page-description">Fill in the details below to compose and publish your new article.</p>
+      </div>
+
+      <?php if ($error): ?>
+        <div id="pageAlert" class="alert-box" style="background:#fee; color:#c33; padding:15px; border-radius:4px; margin-bottom:20px;"><?php echo $error; ?></div>
+      <?php endif; ?>
+
+      <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Article Details</h2>
+        </div>
+        <div class="card-body">
+          <form id="create-article-form" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="status" id="article-status" value="<?php echo $article['status'] ?? 'draft'; ?>">
+            
+            <div class="form-group">
+              <label for="article-title" class="form-label">Article Title</label>
+              <input type="text" id="article-title" name="article-title" class="form-input" 
+                     value="<?php echo e($article['title'] ?? ''); ?>" required maxlength="100">
+              <small id="title-error-msg" class="limit-message">Character limit reached!</small>
+              <small id="title-word-count" class="word-count-display">0 / 100 chars</small>
+            </div>
+            
+            <div class="form-group">
+              <label for="article-subheading" class="form-label">Article Subheading</label>
+              <input type="text" id="article-subheading" name="article-subheading" class="form-input" 
+                     value="<?php echo e($article['subheading'] ?? ''); ?>" required maxlength="200">
+              <small id="subheading-error-msg" class="limit-message">Character limit reached (200 max)!</small>
+              <small id="subheading-word-count" class="word-count-display">0 / 200 chars</small>
+            </div>
+
+            <div class="form-group">
+              <label for="article-category" class="form-label">Category</label>
+              <select id="article-category" name="article-category" class="form-select" required>
+                <option value="">Select a category...</option>
+                <?php
+                // Fetch Categories for dropdown
+                $cats = $pdo->query("SELECT * FROM categories")->fetchAll();
+                $currentCatId = $article['category_id'] ?? null;
+                foreach ($cats as $cat): 
+                    $selected = ($currentCatId == $cat['id']) ? 'selected' : '';
+                ?>
+                    <option value="<?php echo $cat['slug']; ?>" <?php echo $selected; ?>><?php echo $cat['name']; ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="article-tags" class="form-label">Tags (comma separated)</label>
+              <input type="text" id="article-tags" name="article-tags" class="form-input" 
+                     value="<?php echo e($articleTags); ?>" placeholder="politics, global south, economy">
+            </div>
+            
+            <div class="form-group">
+  <label for="article-keywords" class="form-label">SEO Keywords</label>
+  <input type="text" id="article-keywords" name="article-keywords" class="form-input" 
+         value="<?php echo e($article['meta_keywords'] ?? ''); ?>" placeholder="dr congo, rebels, peace deal, strategic city">
+  <p class="form-note">These will appear in the page header for search engines.</p>
+</div>
+            
+            <div class="form-group toggle-group">
+                <span class="form-label toggle-label">Top Story</span>
+                <label class="switch">
+                  <input type="checkbox" id="top-story" name="top-story" 
+                         <?php echo ($article['is_featured_top_story'] ?? 0) ? 'checked' : ''; ?>>
+                  <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="form-group">
+              <label for="article-photo" class="form-label">Article Photo</label>
+              <?php if (!empty($article['featured_image'])): ?>
+                  <div style="margin-bottom:10px;">
+                      <img src="<?php echo UPLOAD_URL . $article['featured_image']; ?>" style="max-height:100px; border-radius:4px;">
+                      <p style="font-size:12px;">Current Image</p>
+                  </div>
+              <?php endif; ?>
+              <input type="file" id="article-photo" name="article-photo" class="form-input" accept="image/*" <?php echo $articleId ? '' : 'required'; ?>>
+            </div>
+            
+            <div class="form-group">
+              <label for="article-photo-caption" class="form-label">Article Photo Caption</label>
+              <input type="text" id="article-photo-caption" name="article-photo-caption" class="form-input" 
+                     value="<?php echo e($article['image_caption'] ?? ''); ?>">
+            </div>
+
+            <div class="form-group">
+              <label for="article-content" class="form-label">Article Content</label>
+              <textarea id="article-content" name="article-content" placeholder="Write your article here..."><?php echo $article['content'] ?? ''; ?></textarea>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" onclick="submitForm('draft')" class="button button-secondary">Save Draft</button>
+              <?php if(hasRole('editor') || hasRole('admin')): ?>
+              <button type="button" onclick="submitForm('published')" class="button button-primary">Publish Article</button>
+              <?php else: ?>
+              <button type="button" onclick="submitForm('pending')" class="button button-primary">Submit for Review</button>
+              <?php endif; ?>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+     &copy; <?php echo date("Y"); ?> Southern Bee. All rights reserved.
+    </footer>
+  </div>
+    
+  <script src="assets/js/main.js" defer></script>
+  <script>
+      function submitForm(status) {
+          document.getElementById('article-status').value = status;
+          document.getElementById('create-article-form').submit();
+      }
+      
+      // Initialize TinyMCE logic from main.js or here
+      document.addEventListener('DOMContentLoaded', () => {
+        if (typeof tinymce !== 'undefined') {
+            tinymce.init({
+                selector: 'textarea#article-content',
+                plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table paste code help wordcount',
+                toolbar: 'undo redo | blocks | bold italic forecolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | removeformat | link image',
+                height: 500,
+                relative_urls: false,
+          remove_script_host: false,
+          convert_urls: true,
+            });
+        }
+            
+        const alert = document.getElementById('pageAlert');
+          if (alert) {
+              setTimeout(() => {
+                  alert.style.opacity = '0';
+                  setTimeout(() => alert.remove(), 500);
+              }, 3000);
+          }
+
+          // 2. Character Limit Logic
+          function initCharLimit(inputId, counterId, errorId, limit) {
+              const input = document.getElementById(inputId);
+              const counter = document.getElementById(counterId);
+              const errorMsg = document.getElementById(errorId);
+
+              if (!input || !counter) return;
+
+              function update() {
+                  const len = input.value.length;
+                  counter.textContent = `${len} / ${limit} chars`; // Explicitly set text
+
+                  if (len >= limit) {
+                      input.classList.add('limit-error');
+                      errorMsg.classList.add('visible');
+                  } else {
+                      input.classList.remove('limit-error');
+                      errorMsg.classList.remove('visible');
+                  }
+              }
+
+              input.addEventListener('input', update);
+              // Run once on load to populate count for existing data
+              update();
+          }
+
+          initCharLimit('article-title', 'char-count-title', 'limit-msg-title', 100);
+          initCharLimit('article-subheading', 'char-count-sub', 'limit-msg-sub', 200);
+      });
+  </script>
+</body>
+</html>

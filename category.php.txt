@@ -1,0 +1,440 @@
+<?php
+require_once 'includes/config.php';
+
+$pdo = getDBConnection();
+$categorySlug = $_GET['slug'] ?? '';
+
+// 1. Validate category or Custom Logic for "Opinion"
+// If slug is opinion, we fake the category array for display purposes
+if ($categorySlug === 'opinion') {
+    $category = [
+        'name' => 'Opinion & Analysis',
+        'slug' => 'opinion',
+        'description' => 'In-depth analysis and opinion pieces from around the Global South.'
+    ];
+    $isCombinedCategory = true;
+} else {
+    $stmtCategory = $pdo->prepare("SELECT id, name, slug, description FROM categories WHERE slug = ?");
+    $stmtCategory->execute([$categorySlug]);
+    $category = $stmtCategory->fetch();
+    $isCombinedCategory = false;
+}
+
+if (!$category) {
+    header("HTTP/1.0 404 Not Found");
+    include '404.php';
+    exit;
+}
+
+$perPage = 12;
+
+// 2. Fetch Articles based on Logic
+if ($isCombinedCategory) {
+    // Fetch articles where category slug is EITHER 'opinion' OR 'analysis'
+    $stmt = $pdo->prepare("
+        SELECT a.id, a.title, a.subheading, a.slug, a.featured_image, a.published_at,
+               c.name as category_name, c.slug as category_slug,
+               (SELECT t.slug FROM article_tags at JOIN tags t ON at.tag_id = t.id WHERE at.article_id = a.id LIMIT 1) as first_tag
+        FROM articles a
+        JOIN categories c ON a.category_id = c.id
+        WHERE a.status = 'published' AND c.slug IN ('opinion', 'analysis')
+        ORDER BY a.published_at DESC
+        LIMIT ?
+    ");
+    $stmt->execute([$perPage]);
+    
+    // Count for pagination/infinite scroll
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM articles a 
+        JOIN categories c ON a.category_id = c.id 
+        WHERE a.status = 'published' AND c.slug IN ('opinion', 'analysis')
+    ");
+    $countStmt->execute();
+} else {
+    // Standard Single Category Fetch
+    $stmt = $pdo->prepare("
+        SELECT a.id, a.title, a.subheading, a.slug, a.featured_image, a.published_at,
+               c.name as category_name, c.slug as category_slug,
+               (SELECT t.slug FROM article_tags at JOIN tags t ON at.tag_id = t.id WHERE at.article_id = a.id LIMIT 1) as first_tag
+        FROM articles a
+        JOIN categories c ON a.category_id = c.id
+        WHERE a.status = 'published' AND c.slug = ?
+        ORDER BY a.published_at DESC
+        LIMIT ?
+    ");
+    $stmt->execute([$categorySlug, $perPage]);
+    
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM articles a 
+        JOIN categories c ON a.category_id = c.id 
+        WHERE a.status = 'published' AND c.slug = ?
+    ");
+    $countStmt->execute([$categorySlug]);
+}
+
+$articles = $stmt->fetchAll();
+$totalArticles = $countStmt->fetchColumn();
+
+function buildArticleUrl($article) {
+    $category = $article['category_slug'] ?? 'news';
+    $tag = $article['first_tag'] ?? 'general';
+    $slug = $article['slug'];
+    return SITE_URL . "/$category/$tag/$slug";
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo e($category['name']); ?> News | Southern Bee</title>
+    <meta name="description" content="<?php echo e($category['description'] ?? 'Browse ' . $category['name'] . ' news and stories from the Global South'); ?>">
+    <meta property="og:title" content="<?php echo e($category['name']); ?> News | Southern Bee">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="<?php echo SITE_URL; ?>/assets/img/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?php echo SITE_URL; ?>/assets/img/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?php echo SITE_URL; ?>/assets/img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="<?php echo SITE_URL; ?>/assets/img/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="<?php echo SITE_URL; ?>/assets/img/google-icon.png">
+    <link rel="stylesheet" href="<?php echo SITE_URL; ?>/assets/css/news.css">
+    <link rel="stylesheet" href="<?php echo SITE_URL; ?>/assets/css/styles.css">
+    <link href="https://fonts.cdnfonts.com/css/trueno-2" rel="stylesheet">
+    <link rel="canonical" href="<?php echo SITE_URL; ?>/<?php echo e($categorySlug); ?>">
+<script>
+  var _paq = window._paq = window._paq || [];
+  /* tracker methods like "setCustomDimension" should be called before "trackPageView" */
+  _paq.push(['trackPageView']);
+  _paq.push(['enableLinkTracking']);
+  (function() {
+    var u="//merry-antelope.pikapod.net/";
+    _paq.push(['setTrackerUrl', u+'matomo.php']);
+    _paq.push(['setSiteId', '1']);
+    var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+    g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
+  })();
+</script>
+
+    <!-- Google tag (gtag.js)
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-BJY1ETR8N8"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-BJY1ETR8N8');
+</script>-->
+<style>
+.f-item h3,.f-item ul li a:hover,footer{color:#fff}.weglot-container{display:none!important}#infinite-scroll-trigger{display:flex;justify-content:center;padding:20px;width:100%;min-height:50px;opacity:0;transition:opacity .3s}#infinite-scroll-trigger.active{opacity:1}footer{background-color:#121a2b;padding:30px 5%}.footer-brand{font-size:20px;font-weight:700;margin-bottom:25px}.f-item h3{font-size:14px;text-transform:uppercase;margin-bottom:15px;font-weight:700;letter-spacing:.5px}.f-item ul{list-style:none;padding-left:0;margin:0}.f-item ul li{margin-bottom:8px}.f-item ul li a{color:#8a8f99;text-decoration:none;font-size:14px;transition:color .3s}.footer-bottom{color:#8a8f99;font-size:12px;text-align:center;padding-top:25px;margin-top:25px;border-top:1px solid #343a40}.footer-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px 15px}.f-main{grid-column:1;grid-row:1}.f-regions{grid-column:2;grid-row:1}.f-about{grid-column:1;grid-row:2}.f-terms{grid-column:2;grid-row:2}.mobile-header{display:block}@media (min-width:768px){footer{padding:40px 10%}.footer-grid{display:flex;justify-content:space-between;align-items:flex-start;gap:40px;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto}.f-main{grid-column:1;grid-row:1}.f-regions{grid-column:1;grid-row:2;margin-top:10px}.f-about,.f-terms{grid-row:1/span 2}.f-about{grid-column:2}.f-terms{grid-column:3}.mobile-header{display:none}}
+</style>
+<script type="text/javascript" src="https://cdn.weglot.com/weglot.min.js"></script>
+
+<script>
+    Weglot.initialize({api_key:"wg_cfc0e72c60e06fea5cb8e5c437bb9bca3"}),Weglot.on("initialized",function(){var n=document.getElementById("translateBtn");if(n){var e=Weglot.getCurrentLang();n.innerText="fr"===e?"EN":"FR",n.addEventListener("click",function(n){n.preventDefault(),"en"===Weglot.getCurrentLang()?Weglot.switchTo("fr"):Weglot.switchTo("en")})}}),Weglot.on("languageChanged",function(n){var e=document.getElementById("translateBtn");e&&(e.innerText="fr"===n?"EN":"FR")});
+</script>
+</head>
+<body>
+<div class="overlay" id="overlay"></div>
+<nav class="nav-menu" id="navMenu">
+  <div class="menu-header">
+    <div class="menu-logo">
+      <img src="assets/img/logo-img.jpg" alt="Southern Bee" width="250" height="100">
+    </div>
+    <div class="logo-icon">
+      <input hidden="" class="check-icon" id="check-icon" name="check-icon" type="checkbox">
+      <label class="icon-menu" for="check-icon">
+        <div class="bar bar--1"></div>
+        <div class="bar bar--2"></div>
+        <div class="bar bar--3"></div>
+      </label>
+    </div>
+  </div>
+  <ul>
+    <li><a href="<?php echo SITE_URL; ?>">Home</a></li>
+    <li class="menu-item-with-submenu">
+      <a href="<?php echo SITE_URL; ?>/latest-news">News</a>
+      <ul class="submenu">
+        <li><a href="<?php echo SITE_URL; ?>/tag/africa">Africa</a></li>
+        <li><a href="<?php echo SITE_URL; ?>/tag/asia">Asia</a></li>
+        <li><a href="<?php echo SITE_URL; ?>/tag/latin-america">Latin America</a></li>
+        <li><a href="<?php echo SITE_URL; ?>/tag/middle-east">Middle East</a></li>
+      </ul>
+    </li>
+    <li><a href="<?php echo SITE_URL; ?>/politics">Politics</a></li>
+    <li><a href="<?php echo SITE_URL; ?>/economy">Economy</a></li>
+    <li><a href="<?php echo SITE_URL; ?>/tech">Tech</a></li>
+    <!--<li><a href="#">Lifestyle</a></li>-->
+    <li><a href="<?php echo SITE_URL; ?>/energy">Energy</a></li>
+    <!--<li><a href="#">Sports</a></li>-->    
+    <li class="menu-item-with-submenu disabled-submenu">
+      <a href="#">Southern+</a>
+      <ul class="submenu">
+        <li><a href="#">Podcasts</a></li>
+        <li><a href="#">Talking Points</a></li>
+        <li><a href="#">Special Reports</a></li>
+      </ul>
+    </li>
+    <li><a href="<?php echo SITE_URL; ?>/about">About Us</a></li>
+    <li><a href="<?php echo SITE_URL; ?>/contact">Contact</a></li>
+  </ul>
+</nav>
+  
+<nav class="top-nav">
+  <div class="mobile-nav-left">
+    <div class="logo-icon mobile-only">
+      <input hidden="" class="check-icon" id="check-icon-main" name="check-icon-main" type="checkbox">
+      <label class="icon-menu" for="check-icon-main">
+        <div class="bar bar--1"></div>
+        <div class="bar bar--2"></div>
+        <div class="bar bar--3"></div>
+      </label>
+    </div>
+    <a href="<?php echo SITE_URL; ?>" class="logo">
+      <img src="assets/img/logo-img.jpg" alt="Southern Bee" width="201" height="75">
+    </a>
+  </div>
+  
+  <div class="nav-right">
+    <button id="translateBtn" class="lang-btn">FR</button>
+    <div id="google_translate_element" style="display:none;"></div>
+    <div class="vertical-line"></div>
+    <div class="search-bar">
+      <input type="text" placeholder="Search..." class="search-input" aria-label="Search for articles">
+      <button class="search-button" aria-label="Submit Search">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="desktop-nav-container">
+  <nav class="desktop-nav">
+    <ul class="main-menu">
+      <li><a href="<?php echo SITE_URL; ?>/latest-news">Latest</a></li>
+      <li><a href="<?php echo SITE_URL; ?>/economy">Economy</a></li>
+      <li><a href="<?php echo SITE_URL; ?>/energy">Energy</a></li>
+      <!--<li><a href="#">Lifestyle</a></li>-->
+      <li><a href="<?php echo SITE_URL; ?>/politics">Politics</a></li>
+      <li><a href="<?php echo SITE_URL; ?>/tech">Tech</a></li>
+      <!--<li><a href="#">Sports</a></li>-->
+      <li class="more-menu disabled-submenu">
+        <a href="#">Southern+</a>
+        <div class="dropdown-arrow">›</div>
+      </li>
+    </ul>
+  </nav>
+  
+  <nav class="secondary-nav">
+    <ul>
+      <li><a href="<?php echo SITE_URL; ?>/tag/africa">Africa</a></li>
+      <li><a href="<?php echo SITE_URL; ?>/tag/asia">Asia</a></li>
+      <li><a href="<?php echo SITE_URL; ?>/tag/latin-america">Latin America</a></li>
+      <li><a href="<?php echo SITE_URL; ?>/tag/middle-east">Middle East</a></li>
+    </ul>
+  </nav>
+</div>
+
+<header class="bottom-header">
+  <div class="date-info">
+    <div class="day" id="currentDay"></div>
+    <div class="datetime" id="currentDateTime"></div>
+  </div>
+
+  <div class="weather-container">
+    <div class="weather-info">
+      <span class="weather-text"></span>
+      <div class="icon">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <g stroke-width="0" id="SVGRepo_bgCarrier"></g>
+          <g
+            stroke-linejoin="round"
+            stroke-linecap="round"
+            id="SVGRepo_tracerCarrier"
+          ></g>
+          <g id="SVGRepo_iconCarrier">
+            <path
+              stroke-linecap="round"
+              stroke-width="1.5"
+              stroke="#ffffff"
+              d="M22 14.3529C22 17.4717 19.4416 20 16.2857 20H11M14.381 9.02721C14.9767 8.81911 15.6178 8.70588 16.2857 8.70588C16.9404 8.70588 17.5693 8.81468 18.1551 9.01498M7.11616 11.6089C6.8475 11.5567 6.56983 11.5294 6.28571 11.5294C3.91878 11.5294 2 13.4256 2 15.7647C2 18.1038 3.91878 20 6.28571 20H7M7.11616 11.6089C6.88706 10.9978 6.7619 10.3369 6.7619 9.64706C6.7619 6.52827 9.32028 4 12.4762 4C15.4159 4 17.8371 6.19371 18.1551 9.01498M7.11616 11.6089C7.68059 11.7184 8.20528 11.9374 8.66667 12.2426M18.1551 9.01498C18.8381 9.24853 19.4623 9.60648 20 10.0614"
+            ></path>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="temperature"></div>
+    <div class="location">
+      <svg
+        version="1.0"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 64 64"
+        xml:space="preserve"
+        fill="#ffffff"
+        stroke="#ffffff"
+      >
+        <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+        <g
+          id="SVGRepo_tracerCarrier"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ></g>
+        <g id="SVGRepo_iconCarrier">
+          <path
+            fill="#ffffff"
+            d="M32,0C18.746,0,8,10.746,8,24c0,5.219,1.711,10.008,4.555,13.93c0.051,0.094,0.059,0.199,0.117,0.289l16,24 C29.414,63.332,30.664,64,32,64s2.586-0.668,3.328-1.781l16-24c0.059-0.09,0.066-0.195,0.117-0.289C54.289,34.008,56,29.219,56,24 C56,10.746,45.254,0,32,0z M32,32c-4.418,0-8-3.582-8-8s3.582-8,8-8s8,3.582,8,8S36.418,32,32,32z"
+          ></path>
+        </g>
+      </svg>
+      <p><span></span></p>
+    </div>
+  </div>
+</header>
+
+<div class="page-container">
+    <div class="header-section">
+        <h1><?php echo e($category['name']); ?> News</h1>
+        <div class="divider"></div>
+    </div>
+    
+    <?php if (!empty($category['description'])): ?>
+    <p style="margin-bottom: 20px; color: #555; font-size: 1.1rem;">
+        <?php echo e($category['description']); ?>
+    </p>
+    <?php endif; ?>
+    
+    <div class="alt-news-content-area">
+        <main class="news-article-list" id="newsArticleList" data-type="category" data-category="<?php echo e($categorySlug); ?>">
+            <?php if (empty($articles)): ?>
+            <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px;">
+                <h2 style="color: #555; margin-bottom: 10px;">No Articles Yet</h2>
+                <p style="color: #777;">Check back soon for <?php echo e($category['name']); ?> news.</p>
+            </div>
+            <?php else: ?>
+            
+            <?php foreach ($articles as $index => $article): ?>
+            <div class="alt-news-card fade-in">
+                <img src="<?php echo UPLOAD_URL . e($article['featured_image']); ?>" 
+                     alt="<?php echo e($article['title']); ?>" 
+                     loading="lazy"
+                     width="211" 
+                     height="119"/>
+                <div class="alt-news-card-content">
+                    <div class="alt-news-meta">
+                        <span class="category"><?php echo e($article['category_name']); ?></span>
+                        <span class="date"><?php echo formatDate($article['published_at']); ?></span>
+                    </div>
+                    <div class="title">
+                        <a href="<?php echo buildArticleUrl($article); ?>">
+                            <?php echo e($article['title']); ?>
+                        </a>
+                    </div>
+                    <div class="excerpt"><?php echo e(substr($article['subheading'], 0, 150)); ?><?php echo strlen($article['subheading']) > 150 ? '...' : ''; ?></div>
+                </div>
+            </div>
+            
+            <?php 
+            if (($index + 1) % 3 === 0 && $index < count($articles) - 1): 
+            ?>
+            <div class="divider news-item-divider"></div>
+            <div class="injected-mobile-ad-wrapper">
+                <div class="alt-ad-unit injected-mobile-ad">
+                    <div id="container-mobile-ad-<?php echo $index; ?>"></div>
+                </div>
+                <div class="divider news-item-divider"></div>
+            </div>
+            <?php else: ?>
+            <div class="divider news-item-divider"></div>
+            <?php endif; ?>
+            <?php endforeach; ?>
+
+            <div id="infinite-scroll-trigger" class="loader-wrapper">
+                <div class="loader"></div>
+            </div>
+            <p id="end-of-content" class="end-message" style="display: none;">
+                You've reached the end of <?php echo e($category['name']); ?> articles.
+            </p>
+            
+            <?php endif; ?>
+        </main>
+
+        <aside class="alt-sidebar-ads-list">
+            <div class="alt-ad-unit">
+                <div id="container-sidebar-1"></div>
+            </div>
+            <div class="alt-ad-unit">
+                <div id="container-sidebar-2"></div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<footer>
+    <div class="footer-brand">Southern Bee</div>
+    
+    <div class="footer-grid">
+        <div class="f-item f-main">
+            <h3>SECTIONS</h3>
+            <ul>
+                <li><a href="<?php echo SITE_URL; ?>/economy">Economy</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/energy">Energy</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/politics">Politics</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/tech">Tech</a></li>
+            </ul>
+        </div>
+
+        <div class="f-item f-regions">
+            <h3 class="mobile-header">REGIONS</h3> 
+            <ul>
+                <li><a href="<?php echo SITE_URL; ?>/tag/africa">Africa</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/tag/asia">Asia</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/tag/latin-america">Latin America</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/tag/middle-east">Middle East</a></li>
+            </ul>
+        </div>
+
+        <div class="f-item f-about">
+            <h3>ABOUT</h3>
+            <ul>
+                <li><a href="<?php echo SITE_URL; ?>/about">About Us</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/contact">Contact</a></li>
+            </ul>
+        </div>
+
+        <div class="f-item f-terms">
+            <h3>TERMS OF USE</h3>
+            <ul>
+                <li><a href="<?php echo SITE_URL; ?>/privacy-policy">Privacy Policy</a></li>
+                <li><a href="<?php echo SITE_URL; ?>/cookie-policy">Cookie Policy</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="footer-bottom">
+        &copy; <?php echo date("Y"); ?> Southern Bee. All rights reserved
+    </div>
+</footer>
+    
+    <div id="loading-screen" style="display: none;">
+        <div class="loader-container">
+            <div class="loader-flex"></div>
+            <div class="loader-d-flex">
+                <div class="first-loader"></div>
+                <div class="second-loader"></div>
+            </div>
+            <div class="d-loader"></div>
+       </div>
+    </div>
+    
+<script src="<?php echo SITE_URL; ?>/assets/js/cookie-consent.js" defer></script>
+
+<script src="<?php echo SITE_URL; ?>/assets/js/script.js" defer></script>
+</body>
+</html>
