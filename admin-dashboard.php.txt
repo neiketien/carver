@@ -1,0 +1,430 @@
+<?php
+require_once 'includes/config.php';
+requireAuth();
+
+$pdo = getDBConnection();
+$user = getCurrentUser();
+$userRole = $_SESSION['user_role'];
+
+// Calculate KPIs
+$publishedCount = $pdo->query("SELECT COUNT(*) FROM articles WHERE status = 'published'")->fetchColumn();
+$pendingCount = $pdo->query("SELECT COUNT(*) FROM articles WHERE status = 'pending'")->fetchColumn();
+
+if ($userRole === 'writer') {
+    $draftCount = $pdo->prepare("SELECT COUNT(*) FROM articles WHERE status = 'draft' AND user_id = ?");
+    $draftCount->execute([$_SESSION['user_id']]);
+    $draftCount = $draftCount->fetchColumn();
+} else {
+    $draftCount = $pdo->query("SELECT COUNT(*) FROM articles WHERE status = 'draft'")->fetchColumn();
+}
+
+// Monthly views (last 30 days)
+$monthlyViews = $pdo->query("
+    SELECT SUM(view_count) 
+    FROM articles 
+    WHERE status = 'published' 
+    AND published_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+")->fetchColumn() ?? 0;
+
+// Recent activity based on role
+if ($userRole === 'writer') {
+    $recentArticles = $pdo->prepare("
+        SELECT a.*, c.name as category_name, a.status as article_status
+        FROM articles a
+        JOIN categories c ON a.category_id = c.id
+        WHERE a.user_id = ?
+        ORDER BY a.updated_at DESC
+        LIMIT 4
+    ");
+    $recentArticles->execute([$_SESSION['user_id']]);
+} else {
+    $recentArticles = $pdo->query("
+        SELECT a.*, c.name as category_name, u.full_name as author_name, a.status as article_status
+        FROM articles a
+        JOIN categories c ON a.category_id = c.id
+        JOIN users u ON a.user_id = u.id
+        ORDER BY a.updated_at DESC
+        LIMIT 4
+    ");
+}
+$recentArticles = $recentArticles->fetchAll();
+
+// Notifications (pending articles for editors/admins)
+$notifications = [];
+if (hasRole('editor')) {
+    $notifStmt = $pdo->prepare("
+        SELECT n.*, a.title as article_title, a.slug as article_slug
+        FROM notifications n
+        LEFT JOIN articles a ON n.article_id = a.id
+        WHERE n.user_id = ? AND n.is_read = 0
+        ORDER BY n.created_at DESC
+        LIMIT 5
+    ");
+    $notifStmt->execute([$_SESSION['user_id']]);
+    $notifications = $notifStmt->fetchAll();
+}
+
+// Team activity (for admins/editors)
+if (hasRole('editor')) {
+    $teamActivity = $pdo->query("
+        SELECT u.full_name, u.email, u.role,
+               (SELECT title FROM articles WHERE user_id = u.id AND status = 'published' ORDER BY published_at DESC LIMIT 1) as recent_article,
+               (SELECT updated_at FROM articles WHERE user_id = u.id ORDER BY updated_at DESC LIMIT 1) as last_activity
+        FROM users u
+        WHERE u.status = 'active'
+        ORDER BY last_activity DESC
+        LIMIT 5
+    ");
+    $teamActivity = $teamActivity->fetchAll();
+}
+
+// Users list (admins only)
+if (hasRole('admin')) {
+    $usersList = $pdo->query("
+        SELECT id, full_name, email, role, status, last_login
+        FROM users
+        ORDER BY created_at DESC
+    ");
+    $usersList = $usersList->fetchAll();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | Southern Bee Admin</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" href="assets/img/favicon.ico">
+</head>
+<body>
+<div class="dashboard">
+    <!-- HEADER START -->
+    <header class="dashboard-header">
+        <div class="header-container">
+            <div class="logo">The Bee</div>
+            
+            <nav class="header-nav">
+                <ul class="nav-links">
+                    <li><a href="admin-dashboard.php" class="nav-link active">Dashboard</a></li>
+                    <li><a href="manage-articles.php" class="nav-link">Articles</a></li>
+                    <?php if (hasRole('admin')): ?>
+                    <li><a href="analytics.php" class="nav-link">Analytics</a></li>
+                    <li><a href="admin-signup.php" class="nav-link">Users</a></li>
+                    <?php endif; ?>
+                </ul>
+            </nav>
+
+            <div class="header-actions">
+                <div class="search-container">
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" class="search-input" placeholder="Search...">
+                </div>
+
+                <?php if ($pendingCount > 0 && hasRole('editor')): ?>
+                <button class="icon-button" style="position: relative;">
+                    <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                    <span style="position: absolute; top: -4px; right: -4px; background: #e74c3c; color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">
+                        <?php echo $pendingCount; ?>
+                    </span>
+                </button>
+                <?php endif; ?>
+
+                <div class="user-menu">
+                    <div class="user-avatar"><?php echo getInitials($user['full_name']); ?></div>
+                    <div class="user-dropdown">
+                        <div class="user-details">
+                            <div class="small-user-avatar"><?php echo getInitials($user['full_name']); ?></div>
+                            <div class="user-component">
+                                <b><?php echo e($user['full_name']); ?></b>
+                                <p><?php echo e($user['email']); ?></p>
+                            </div>
+                        </div>
+                        <?php if (hasRole('admin')): ?>
+                        <div class="dropdown-separator"></div>
+                        <a href="analytics.php" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 16v5"/><path d="M16 14v7"/><path d="M20 10v11"/><path d="m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15"/><path d="M4 18v3"/><path d="M8 14v7"/>
+                            </svg>
+                            Analytics
+                        </a>
+                        <a href="manage-articles.php" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/>
+                            </svg>
+                            Articles
+                        </a>
+                        <?php endif; ?>
+                        <div class="dropdown-separator"></div>
+                        <a href="profile.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            Profile
+                        </a>
+                        <a href="settings.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                            Settings
+                        </a>
+                        <div class="dropdown-separator"></div>
+                        <a href="logout.php" class="dropdown-item">
+                            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" x2="9" y1="12" y2="12"></line>
+                            </svg>
+                            Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    <!-- HEADER END -->
+
+    <main class="main-container">
+        <div class="page-header">
+            <h1 class="header-greeting" id="header-greeting">Good morning, <span><?php echo explode(' ', $user['full_name'])[0]; ?></span></h1>
+            <p class="page-description">Here's what's happening with your content today</p>
+        </div>
+
+        <a href="create-article.php" class="create-button">
+            <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" x2="12" y1="5" y2="19"></line>
+                <line x1="5" x2="19" y1="12" y2="12"></line>
+            </svg>
+            Create New Article
+        </a>
+
+        <!-- KPI Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-header">
+                    <div class="stat-title">Published Articles</div>
+                    <svg class="stat-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+                        <polyline points="14,2 14,8 20,8"></polyline>
+                    </svg>
+                </div>
+                <div class="stat-value"><?php echo $publishedCount; ?></div>
+                <div class="stat-change">Total published</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-header">
+                    <div class="stat-title">In Review</div>
+                    <svg class="stat-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                </div>
+                <div class="stat-value"><?php echo $pendingCount; ?></div>
+                <div class="stat-change">
+                    <?php echo $pendingCount > 0 ? 'Pending approval' : 'No pending reviews'; ?>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-header">
+                    <div class="stat-title">Draft Articles</div>
+                    <svg class="stat-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"></path>
+                        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                    </svg>
+                </div>
+                <div class="stat-value"><?php echo $draftCount; ?></div>
+                <div class="stat-change"><?php echo $userRole === 'writer' ? 'Your drafts' : 'Total drafts'; ?></div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-header">
+                    <div class="stat-title">Monthly Views</div>
+                    <svg class="stat-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    </svg>
+                </div>
+                <div class="stat-value"><?php echo number_format($monthlyViews); ?></div>
+                <div class="stat-change">Last 30 days</div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Recent Activity</h2>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Title</th>
+                                <th>Category</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($recentArticles as $article): ?>
+                            <tr>
+                                <td>
+                                    <span class="badge <?php echo $article['article_status']; ?>">
+                                        <?php echo ucfirst($article['article_status']); ?>
+                                    </span>
+                                </td>
+                                <td><?php echo e($article['title']); ?></td>
+                                <td><?php echo e($article['category_name']); ?></td>
+                                <td><?php echo formatDate($article['updated_at'], 'M j, Y'); ?></td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <a href="create-article.php?id=<?php echo $article['id']; ?>" class="button button-sm button-outline">Edit</a>
+                                        <?php if ($article['article_status'] === 'draft'): ?>
+                                        <button class="button button-sm button-primary" onclick="publishArticle(<?php echo $article['id']; ?>)">Publish</button>
+                                        <?php elseif ($article['article_status'] === 'published'): ?>
+                                        <a href="<?php echo SITE_URL; ?>/article.php?slug=<?php echo $article['slug']; ?>" class="button button-sm button-secondary" target="_blank">View</a>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <?php if (hasRole('editor') && !empty($teamActivity)): ?>
+        <!-- Team Activity -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Team Activity</h2>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Recent Article</th>
+                                <th>Last Activity</th>
+                                <th>Role</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($teamActivity as $member): ?>
+                            <tr>
+                                <td>
+                                    <div class="user-cell">
+                                        <span class="status-dot <?php echo $member['last_activity'] && strtotime($member['last_activity']) > strtotime('-1 hour') ? 'online' : 'offline'; ?>"></span>
+                                        <span class="user-name"><?php echo e($member['full_name']); ?></span>
+                                    </div>
+                                </td>
+                                <td><?php echo e($member['recent_article'] ?? 'No articles yet'); ?></td>
+                                <td><?php echo $member['last_activity'] ? timeAgo($member['last_activity']) : 'Never'; ?></td>
+                                <td><?php echo ucfirst($member['role']); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (hasRole('admin') && !empty($usersList)): ?>
+        <!-- Team Management -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Team Management</h2>
+                <a href="admin-signup.php" class="button button-lg button-outline">Add new user</a>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($usersList as $usr): ?>
+                            <tr>
+                                <td>
+                                    <div class="user-cell">
+                                        <span class="status-dot <?php echo $usr['last_login'] && strtotime($usr['last_login']) > strtotime('-1 hour') ? 'online' : 'offline'; ?>"></span>
+                                        <span class="user-name"><?php echo e($usr['full_name']); ?></span>
+                                    </div>
+                                </td>
+                                <td><?php echo e($usr['email']); ?></td>
+                                <td><?php echo ucfirst($usr['role']); ?></td>
+                                <td>
+                                    <span class="badge <?php echo $usr['status'] === 'active' ? 'published' : 'draft'; ?>">
+                                        <?php echo ucfirst($usr['status']); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <?php if ($usr['id'] !== $_SESSION['user_id']): ?>
+                                        <button class="button button-sm button-outline" onclick="editUser(<?php echo $usr['id']; ?>)">Edit</button>
+                                        <?php if ($usr['status'] === 'active'): ?>
+                                        <button class="button button-sm button-destructive"
+onclick="deactivateUser(<?php echo $usr['id']; ?>)">Deactivate</button>
+                                        <?php else: ?>
+                                        <button class="button button-sm button-success"
+onclick="activateUser(<?php echo $usr['id']; ?>)">Activate</button>
+                                        <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+    </main>
+    <footer class="footer">
+        &copy; <?php echo date("Y"); ?> Southern Bee. All rights reserved.
+    </footer>
+</div>
+<script src="assets/js/main.js" defer></script>
+<script>
+// Placeholder functions for user management
+function publishArticle(id) {
+    if (confirm('Publish this article?')) {
+        window.location.href = 'api/publish-article.php?id=' + id;
+    }
+}
+function deactivateUser(id) {
+    if (confirm('Deactivate this user?')) {
+        window.location.href = 'api/user-action.php?action=deactivate&id=' + id;
+    }
+}
+
+function activateUser(id) {
+    window.location.href = 'api/user-action.php?action=activate&id=' + id;
+}
+function editUser(id) {
+    window.location.href = 'profile.php?id=' + id;
+}
+</script>
+</body>
+</html>
